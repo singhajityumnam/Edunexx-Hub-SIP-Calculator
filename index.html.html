@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Edunexx Hub — All-in-One SIP & SWP Calculator</title>
+  <!-- Chart.js for charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- SheetJS for Excel export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    :root{
+      --brand:#2563eb; /* blue-600 */
+      --brand-dark:#1e40af; /* blue-800 */
+      --bg:#f9fafb; /* slate-50 */
+      --card:#ffffff;
+      --muted:#e5e7eb; /* gray-200 */
+      --text:#0f172a; /* slate-900 */
+    }
+    *{box-sizing:border-box}
+    body{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      margin:0; background:var(--bg); color:var(--text); padding:12px;
+    }
+    .container{max-width:980px; margin:0 auto; background:var(--card); border-radius:14px; box-shadow:0 8px 24px rgba(2,6,23,.08); padding:18px}
+    h1{margin:6px 0 14px; text-align:center; color:var(--brand)}
+    .tabs{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:8px 0 14px}
+    .tab{padding:10px 14px; border-radius:999px; background:var(--muted); cursor:pointer; user-select:none; font-weight:600}
+    .tab.active{background:var(--brand); color:#fff}
+    .grid{display:grid; grid-template-columns:1fr; gap:12px}
+    @media(min-width:860px){.grid{grid-template-columns: 360px 1fr}}
+    .card{border:1px solid #eef2f7; border-radius:12px; padding:12px}
+    label{display:block; margin:8px 0 4px; font-weight:600}
+    input[type="number"]{width:100%; padding:10px; border:1px solid #d1d5db; border-radius:10px; font-size:15px}
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+    .actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+    button{appearance:none; border:none; padding:10px 14px; border-radius:10px; background:var(--brand); color:#fff; font-weight:700; cursor:pointer}
+    button.secondary{background:#0f172a0d; color:#0f172a}
+    button:hover{background:var(--brand-dark)}
+    table{width:100%; border-collapse:collapse; font-size:14px; margin-top:10px}
+    th,td{border:1px solid #e5e7eb; padding:8px; text-align:right}
+    th{background:#f8fafc; text-align:right}
+    th:first-child, td:first-child{text-align:center}
+    .muted{color:#475569; font-size:12px}
+    .disclaimer{font-size:12px; color:#475569; margin-top:8px}
+    .chart-wrap{background:#fbfdff; border:1px solid #eef2f7; border-radius:12px; padding:10px}
+    .totals{display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:6px}
+    .kpi{border:1px solid #eef2f7; border-radius:10px; padding:8px}
+    .kpi .label{font-size:12px; color:#475569}
+    .kpi .value{font-size:18px; font-weight:800; margin-top:2px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>💰 Edunexx Hub — SIP • Step‑Up SIP • SWP • Step‑Up SWP</h1>
+
+    <div class="tabs">
+      <div class="tab active" data-mode="sip">SIP</div>
+      <div class="tab" data-mode="stepup-sip">Step‑Up SIP</div>
+      <div class="tab" data-mode="swp">SWP</div>
+      <div class="tab" data-mode="stepup-swp">Step‑Up SWP</div>
+    </div>
+
+    <div class="grid">
+      <!-- Inputs -->
+      <div class="card" id="inputs"></div>
+
+      <!-- Results -->
+      <div class="card">
+        <div class="totals" id="kpis"></div>
+        <div id="tableWrap"></div>
+        <div class="actions">
+          <button id="calcBtn">Calculate</button>
+          <button class="secondary" id="csvBtn" style="display:none">Download CSV</button>
+          <button class="secondary" id="xlsxBtn" style="display:none">Download Excel</button>
+        </div>
+        <div class="chart-wrap" style="margin-top:12px">
+          <canvas id="growthChart" height="120"></canvas>
+        </div>
+        <div class="disclaimer">Educational tool. Assumes monthly compounding and simplified tax as a percentage of gains at year-end. Real products may differ (exit load, taxation rules, etc.).</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== Helpers =====
+    const currency = '₹';
+    const fmt = (n) => currency + Number(n).toLocaleString('en-IN', {maximumFractionDigits:2});
+    const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+    // Build input forms per mode
+    const INPUT_TEMPLATES = {
+      'sip': () => `
+        <h3>SIP (with optional Lumpsum)</h3>
+        <label>Monthly SIP (${currency})</label>
+        <input type="number" id="sipMonthly" placeholder="5000" />
+        <label>Lumpsum (optional ${currency})</label>
+        <input type="number" id="sipLumpsum" placeholder="100000" />
+        <div class="row">
+          <div>
+            <label>Annual Return (%)</label>
+            <input type="number" id="sipReturn" placeholder="12" />
+          </div>
+          <div>
+            <label>Duration (Years)</label>
+            <input type="number" id="sipYears" placeholder="10" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Inflation (%)</label>
+            <input type="number" id="sipInflation" placeholder="6" />
+          </div>
+          <div>
+            <label>Tax on Gains (%)</label>
+            <input type="number" id="sipTax" placeholder="10" />
+          </div>
+        </div>
+        <p class="muted">Invests a fixed amount monthly. Lumpsum (if any) is added at start.</p>
+      `,
+      'stepup-sip': () => `
+        <h3>Step‑Up SIP</h3>
+        <label>Base Monthly SIP (${currency})</label>
+        <input type="number" id="ssipMonthly" placeholder="5000" />
+        <label>Yearly Step‑Up (%)</label>
+        <input type="number" id="ssipStep" placeholder="10" />
+        <label>Lumpsum (optional ${currency})</label>
+        <input type="number" id="ssipLumpsum" placeholder="100000" />
+        <div class="row">
+          <div>
+            <label>Annual Return (%)</label>
+            <input type="number" id="ssipReturn" placeholder="12" />
+          </div>
+          <div>
+            <label>Duration (Years)</label>
+            <input type="number" id="ssipYears" placeholder="10" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Inflation (%)</label>
+            <input type="number" id="ssipInflation" placeholder="6" />
+          </div>
+          <div>
+            <label>Tax on Gains (%)</label>
+            <input type="number" id="ssipTax" placeholder="10" />
+          </div>
+        </div>
+        <p class="muted">Monthly SIP increases at the start of each year by the step‑up percentage.</p>
+      `,
+      'swp': () => `
+        <h3>SWP (Systematic Withdrawal)</h3>
+        <label>Initial Investment (${currency})</label>
+        <input type="number" id="swpInitial" placeholder="1000000" />
+        <label>Monthly Withdrawal (${currency})</label>
+        <input type="number" id="swpWithdraw" placeholder="10000" />
+        <div class="row">
+          <div>
+            <label>Annual Return (%)</label>
+            <input type="number" id="swpReturn" placeholder="8" />
+          </div>
+          <div>
+            <label>Duration (Years)</label>
+            <input type="number" id="swpYears" placeholder="10" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Inflation (%)</label>
+            <input type="number" id="swpInflation" placeholder="6" />
+          </div>
+          <div>
+            <label>Tax on Gains (%)</label>
+            <input type="number" id="swpTax" placeholder="10" />
+          </div>
+        </div>
+        <p class="muted">Withdraw a fixed amount monthly. Balance grows monthly at the given annual return.</p>
+      `,
+      'stepup-swp': () => `
+        <h3>Step‑Up SWP</h3>
+        <label>Initial Investment (${currency})</label>
+        <input type="number" id="sswpInitial" placeholder="1000000" />
+        <label>Base Monthly Withdrawal (${currency})</label>
+        <input type="number" id="sswpWithdraw" placeholder="10000" />
+        <label>Yearly Step‑Up (%)</label>
+        <input type="number" id="sswpStep" placeholder="5" />
+        <div class="row">
+          <div>
+            <label>Annual Return (%)</label>
+            <input type="number" id="sswpReturn" placeholder="8" />
+          </div>
+          <div>
+            <label>Duration (Years)</label>
+            <input type="number" id="sswpYears" placeholder="10" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Inflation (%)</label>
+            <input type="number" id="sswpInflation" placeholder="6" />
+          </div>
+          <div>
+            <label>Tax on Gains (%)</label>
+            <input type="number" id="sswpTax" placeholder="10" />
+          </div>
+        </div>
+        <p class="muted">Withdrawal increases at the start of each year by the step‑up percentage.</p>
+      `
+    };
+
+    // State
+    let currentMode = 'sip';
+    let tableData = []; // 2D array for export
+    let chart;
+
+    const inputsDiv = document.getElementById('inputs');
+    const tableWrap = document.getElementById('tableWrap');
+    const kpis = document.getElementById('kpis');
+    const calcBtn = document.getElementById('calcBtn');
+    const csvBtn = document.getElementById('csvBtn');
+    const xlsxBtn = document.getElementById('xlsxBtn');
+
+    function renderInputs(){
+      inputsDiv.innerHTML = INPUT_TEMPLATES[currentMode]();
+    }
+
+    function switchTab(mode){
+      currentMode = mode;
+      document.querySelectorAll('.tab').forEach(t=>{
+        t.classList.toggle('active', t.dataset.mode === mode);
+      });
+      renderInputs();
+      tableWrap.innerHTML = '';
+      kpis.innerHTML = '';
+      csvBtn.style.display = 'none';
+      xlsxBtn.style.display = 'none';
+      if(chart){ chart.destroy(); chart = null; }
+    }
+
+    // Tab click listeners
+    document.querySelectorAll('.tab').forEach(t=>{
+      t.addEventListener('click', ()=> switchTab(t.dataset.mode));
+    });
+
+    // Initial render
+    renderInputs();
+
+    // ===== Calculations =====
+
+    function calcSIP({monthly, lumpsum, annualReturn, years, inflation, taxRate}){
+      const r = annualReturn/12; const months = Math.floor(years*12);
+      let balance = lumpsum||0; let invested = lumpsum||0;
+      const rows = [["Year","Invested","Gains","Tax Paid","End Value","Inflation-Adjusted"]];
+      for(let y=1;y<=years;y++){
+        for(let m=1;m<=12;m++){
+          balance = balance*(1+r) + monthly;
+          invested += monthly;
+        }
+        const gains = Math.max(0, balance - invested);
+        const tax = gains * taxRate;
+        const end = balance - tax;
+        const real = end / Math.pow(1+inflation, y);
+        rows.push([y, round2(invested), round2(gains), round2(tax), round2(end), round2(real)]);
+      }
+      return rows;
+    }
+
+    function calcStepupSIP({baseMonthly, stepPct, lumpsum, annualReturn, years, inflation, taxRate}){
+      const r = annualReturn/12; const rows = [["Year","Invested","Gains","Tax Paid","End Value","Inflation-Adjusted"]];
+      let balance = lumpsum||0; let invested = lumpsum||0;
+      for(let y=1;y<=years;y++){
+        const monthly = baseMonthly * Math.pow(1+stepPct, y-1); // increased each year
+        for(let m=1;m<=12;m++){
+          balance = balance*(1+r) + monthly;
+          invested += monthly;
+        }
+        const gains = Math.max(0, balance - invested);
+        const tax = gains * taxRate;
+        const end = balance - tax;
+        const real = end / Math.pow(1+inflation, y);
+        rows.push([y, round2(invested), round2(gains), round2(tax), round2(end), round2(real)]);
+      }
+      return rows;
+    }
+
+    function calcSWP({initial, withdraw, annualReturn, years, inflation, taxRate}){
+      const r = annualReturn/12; const rows = [["Year","Total Withdrawn","Net Gains","Tax Paid","End Balance","Inflation-Adjusted"]];
+      let balance = initial; let withdrawn = 0;
+      for(let y=1;y<=years;y++){
+        for(let m=1;m<=12;m++){
+          balance = balance*(1+r) - withdraw;
+          withdrawn += withdraw;
+          if(balance < 0){ balance = 0; break; }
+        }
+        const netGains = Math.max(0, balance + withdrawn - initial); // non-negative for tax
+        const tax = netGains * taxRate;
+        const end = Math.max(0, balance - tax);
+        const real = end / Math.pow(1+inflation, y);
+        rows.push([y, round2(withdrawn), round2(netGains), round2(tax), round2(end), round2(real)]);
+        if(balance <= 0) break;
+      }
+      return rows;
+    }
+
+    function calcStepupSWP({initial, baseWithdraw, stepPct, annualReturn, years, inflation, taxRate}){
+      const r = annualReturn/12; const rows = [["Year","Total Withdrawn","Net Gains","Tax Paid","End Balance","Inflation-Adjusted"]];
+      let balance = initial; let withdrawn = 0;
+      for(let y=1;y<=years;y++){
+        const w = baseWithdraw * Math.pow(1+stepPct, y-1);
+        for(let m=1;m<=12;m++){
+          balance = balance*(1+r) - w;
+          withdrawn += w;
+          if(balance < 0){ balance = 0; break; }
+        }
+        const netGains = Math.max(0, balance + withdrawn - initial);
+        const tax = netGains * taxRate;
+        const end = Math.max(0, balance - tax);
+        const real = end / Math.pow(1+inflation, y);
+        rows.push([y, round2(withdrawn), round2(netGains), round2(tax), round2(end), round2(real)]);
+        if(balance <= 0) break;
+      }
+      return rows;
+    }
+
+    // ===== Render Table / KPIs / Chart =====
+    function renderTable(rows){
+      tableData = rows; // for export
+      // KPIs from last row (if exists)
+      if(rows.length > 1){
+        const last = rows[rows.length-1];
+        let k1Label, k1Value, k2Label, k2Value;
+        if(currentMode.includes('swp')){
+          k1Label = 'Total Withdrawn'; k1Value = fmt(last[1]);
+          k2Label = 'End Balance'; k2Value = fmt(last[4]);
+        } else {
+          k1Label = 'Total Invested'; k1Value = fmt(last[1]);
+          k2Label = 'End Value'; k2Value = fmt(last[4]);
+        }
+        kpis.innerHTML = `
+          <div class="kpi"><div class="label">${k1Label}</div><div class="value">${k1Value}</div></div>
+          <div class="kpi"><div class="label">${k2Label}</div><div class="value">${k2Value}</div></div>
+        `;
+      }
+
+      // Table
+      let html = '<table><thead><tr>' + rows[0].map(h=>`<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+      for(let i=1;i<rows.length;i++){
+        html += '<tr>' + rows[i].map((v,idx)=> idx===0?`<td>${v}</td>`:`<td>${fmt(v)}</td>`).join('') + '</tr>';
+      }
+      html += '</tbody></table>';
+      tableWrap.innerHTML = html;
+
+      // Chart (Nominal vs Inflation-Adjusted)
+      const labels = rows.slice(1).map(r=>`Year ${r[0]}`);
+      const nominalIdx = rows[0].indexOf(currentMode.includes('swp')?'End Balance':'End Value');
+      const realIdx = rows[0].indexOf('Inflation-Adjusted');
+      const nominal = rows.slice(1).map(r=>r[nominalIdx]);
+      const real = rows.slice(1).map(r=>r[realIdx]);
+      const ctx = document.getElementById('growthChart').getContext('2d');
+      if(chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type:'line',
+        data:{
+          labels,
+          datasets:[
+            {label:'Nominal', data:nominal, tension:.2},
+            {label:'Inflation-Adjusted', data:real, tension:.2}
+          ]
+        },
+        options:{
+          responsive:true,
+          interaction:{mode:'index', intersect:false},
+          scales:{
+            y:{ticks:{callback:(v)=> currency + Number(v).toLocaleString('en-IN')}}
+          }
+        }
+      });
+
+      // Show export buttons
+      csvBtn.style.display = 'inline-block';
+      xlsxBtn.style.display = 'inline-block';
+    }
+
+    // ===== Collect inputs and calculate =====
+    function onCalculate(){
+      try{
+        let rows;
+        if(currentMode==='sip'){
+          const monthly = +document.getElementById('sipMonthly').value || 0;
+          const lumpsum = +document.getElementById('sipLumpsum').value || 0;
+          const annualReturn = (+document.getElementById('sipReturn').value || 0)/100;
+          const years = Math.floor(+document.getElementById('sipYears').value || 0);
+          const inflation = (+document.getElementById('sipInflation').value || 0)/100;
+          const taxRate = (+document.getElementById('sipTax').value || 0)/100;
+          if(monthly<=0 || annualReturn<=0 || years<=0){ alert('Please enter valid SIP inputs.'); return; }
+          rows = calcSIP({monthly, lumpsum, annualReturn, years, inflation, taxRate});
+        }
+        else if(currentMode==='stepup-sip'){
+          const baseMonthly = +document.getElementById('ssipMonthly').value || 0;
+          const stepPct = (+document.getElementById('ssipStep').value || 0)/100;
+          const lumpsum = +document.getElementById('ssipLumpsum').value || 0;
+          const annualReturn = (+document.getElementById('ssipReturn').value || 0)/100;
+          const years = Math.floor(+document.getElementById('ssipYears').value || 0);
+          const inflation = (+document.getElementById('ssipInflation').value || 0)/100;
+          const taxRate = (+document.getElementById('ssipTax').value || 0)/100;
+          if(baseMonthly<=0 || annualReturn<=0 || years<=0){ alert('Please enter valid Step‑Up SIP inputs.'); return; }
+          rows = calcStepupSIP({baseMonthly, stepPct, lumpsum, annualReturn, years, inflation, taxRate});
+        }
+        else if(currentMode==='swp'){
+          const initial = +document.getElementById('swpInitial').value || 0;
+          const withdraw = +document.getElementById('swpWithdraw').value || 0;
+          const annualReturn = (+document.getElementById('swpReturn').value || 0)/100;
+          const years = Math.floor(+document.getElementById('swpYears').value || 0);
+          const inflation = (+document.getElementById('swpInflation').value || 0)/100;
+          const taxRate = (+document.getElementById('swpTax').value || 0)/100;
+          if(initial<=0 || withdraw<=0 || annualReturn<0 || years<=0){ alert('Please enter valid SWP inputs.'); return; }
+          rows = calcSWP({initial, withdraw, annualReturn, years, inflation, taxRate});
+        }
+        else if(currentMode==='stepup-swp'){
+          const initial = +document.getElementById('sswpInitial').value || 0;
+          const baseWithdraw = +document.getElementById('sswpWithdraw').value || 0;
+          const stepPct = (+document.getElementById('sswpStep').value || 0)/100;
+          const annualReturn = (+document.getElementById('sswpReturn').value || 0)/100;
+          const years = Math.floor(+document.getElementById('sswpYears').value || 0);
+          const inflation = (+document.getElementById('sswpInflation').value || 0)/100;
+          const taxRate = (+document.getElementById('sswpTax').value || 0)/100;
+          if(initial<=0 || baseWithdraw<=0 || annualReturn<0 || years<=0){ alert('Please enter valid Step‑Up SWP inputs.'); return; }
+          rows = calcStepupSWP({initial, baseWithdraw, stepPct, annualReturn, years, inflation, taxRate});
+        }
+        renderTable(rows);
+      } catch(e){
+        console.error(e); alert('Something went wrong. Please check inputs.');
+      }
+    }
+
+    calcBtn.addEventListener('click', onCalculate);
+
+    // ===== Export =====
+    function downloadCSV(){
+      if(!tableData || tableData.length===0){ return; }
+      const csv = tableData.map(row => row.join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${currentMode.toUpperCase()}_Results.csv`;
+      a.click();
+    }
+    function downloadXLSX(){
+      if(!tableData || tableData.length===0){ return; }
+      const ws = XLSX.utils.aoa_to_sheet(tableData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Results');
+      XLSX.writeFile(wb, `${currentMode.toUpperCase()}_Results.xlsx`);
+    }
+    csvBtn.addEventListener('click', downloadCSV);
+    xlsxBtn.addEventListener('click', downloadXLSX);
+  </script>
+</body>
+</html>
